@@ -1,1 +1,1 @@
-webhook: app:main.py
+web: python main.py
