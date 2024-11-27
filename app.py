@@ -5,6 +5,7 @@ import openai  # type: ignore
 import requests  # type: ignore
 from flask import Flask, jsonify, request  # type: ignore
 import re
+from conexao import ChamarBancoDeDados
 
 load_dotenv()
 
@@ -19,7 +20,6 @@ MAX_RESPONSE_LENGTH = 1500  # Limite para o tamanho da resposta
 historico_conversa = {}
 mensagens_processadas = set()
 
-
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
@@ -27,7 +27,7 @@ def webhook():
         mode = request.args.get('hub.mode')
         token = request.args.get('hub.verify_token')
         challenge = request.args.get('hub.challenge')
-
+        
         if mode and token:
             if mode == 'subscribe' and token == VALIDATION_TOKEN:
                 print("WebHook verificado com sucesso")
@@ -109,12 +109,10 @@ def webhook():
 
     return "Error", 400
 
-
 def enviarMensagem(to, message):
     url = 'https://graph.facebook.com/v20.0/477055852149378/messages'
     headers = {
-        'Authorization': 'Bearer EAAO6yVjpe0sBOZCiIPJ59jAyYfgmBSB8nD3lm4hYtd6xZBaZCmg2gYO73fo8cYESFeP2l04yQfE9d6fSBLHmHNB0SZBfILDVNujE8ZA41KRo9vhrpO5xzZCltgDmHbeNnu1mSD0nhrSPzZB8qI70GVYQZA05NRgrJPgvQxZCH3J8Qybl2na4TbdbE5SSXVzt9w22i4oC4D3SKFGR0Pwt3TQmR36HvbULK',
-        # Substitua pelo seu token de acesso
+        'Authorization': 'Bearer EAAO6yVjpe0sBO9xjGyv96SdTeSz74UchoC3ilzDq0ZCd7ZCkgHchOBiVRouZBqeaqVlZAPWKlxB6DPqfauE6Q3UmOKvXSEl73zMbkG8Hu1zdKesztusAa3hSFoQnJSyR3AR5gBOwPtpJyycWIqmawJKgFcsnPuLHkdGxM019VxcxTE0xye0ZCKbdVf72G9zCZB',  # Substitua pelo seu token de acesso
         'Content-Type': 'application/json'
     }
     payload = {
@@ -213,7 +211,6 @@ def categorizarPergunta(pergunta):
     print(f"O tema identificado foi o {tema}")
     return tema
 
-
 def buscarBeneficiarios(mensagem):
     nome = None
     nomePlano = None
@@ -233,45 +230,35 @@ def buscarBeneficiarios(mensagem):
         nomePlano = gerarRepostaChatGPTSemHistórico(contexto, mensagem)
 
     print(f"O nome identificado da pessoa é: {nome}")
-
-    try:
-        # Configurar conexão
-        conexao = mysql.connector.connect(
-            host="localhost",
-            port=3306,
-            user="root",
-            password="",
-            database="w3g_movimentacoes"
-        )
-
-        cursor = conexao.cursor()
-
-        if nomePlano is None:
-            # Criar consulta SQL
-            consulta = """
-            SELECT * FROM movimentacoes WHERE beneficiario LIKE %s
-            """
-            valor = f'%{nome}%'
-            cursor.execute(consulta, (valor,))
-            resultado = cursor.fetchall()
-            return resultado
-        else:
-            consulta = """
-            SELECT * FROM movimentacoes WHERE plano LIKE %s
-            """
-            valor = f'%{nomePlano}%'
-            cursor.execute(consulta, (valor,))
-            resultado = cursor.fetchall()
-            return resultado
-
-    except Error as e:
-        print(f"Erro ao conectar ao MySQL: {e}")
+    
+    print("ENTROU AQUI VAMOS FAZER O TESTE PARA CONEXAO COM O BANCO")
+        
+    conexao = ChamarBancoDeDados()
+    if conexao is None:
+        print("Erro na conexão com o banco de dados.")
         return []
-    finally:
-        if conexao.is_connected():
-            cursor.close()
-            conexao.close()
 
+    cursor = conexao.cursor()
+
+    if nomePlano is None:
+        # Criar consulta SQL
+        consulta = """
+        SELECT * FROM movimentacoes WHERE beneficiario LIKE %s
+        """
+        valor = f'%{nome}%'
+        cursor.execute(consulta, (valor,))
+        resultado = cursor.fetchall()
+        conexao.close()
+        return resultado
+    else:
+        consulta = """
+        SELECT * FROM movimentacoes WHERE plano LIKE %s
+        """
+        valor = f'%{nomePlano}%'
+        cursor.execute(consulta, (valor,))
+        resultado = cursor.fetchall()
+        conexao.close()
+        return resultado
 
 def buscarRede(mensagem):
     # Implementar lógica para buscar na tabela de rede
@@ -295,50 +282,39 @@ def buscarRede(mensagem):
     print(F"Nome da especialidade --------------------- {especialidade}")
     print(F"Nome do municipio --------------------- {cidade}")
 
-    try:
-        conexao = mysql.connector.connect(
-            host="localhost",
-            port=3306,
-            user="root",
-            password="",
-            database="w3g_movimentacoes"
-        )
-
-        cursor = conexao.cursor()
-
-        if 'desculpe' in nome_hospital.lower():
-
-            if "sem" in especialidade.lower():
-                return "Informar a especialidade"
-
-            consulta = """
-            SELECT * FROM redeAmil WHERE elemento_de_divulgação LIKE %s AND municipio LIKE %s
-            """
-            cursor.execute(consulta, (f'%{especialidade}%', f'%{cidade}%'))
-
-        else:
-
-            consulta = """
-            SELECT * FROM redeAmil WHERE nome_prestador LIKE %s
-            """
-            cursor.execute(consulta, (f'%{nome_hospital}%',))
-
-            print(f"CURSOR ========== {cursor.fetchall()}")
-
-            if cursor.fetchall() == []:
-                return "Hospital não encontrado"
-
-        resultados = cursor.fetchall()
-
-        return resultados
-
-    except Error as e:
-        print("Erro ao conectar ao MySQL: ", e)
+    conexao = ChamarBancoDeDados()
+    if conexao is None:
+        print("Erro na conexão com o banco de dados.")
         return []
-    finally:
-        if conexao.is_connected():
-            cursor.close()
-            conexao.close()
+
+    cursor = conexao.cursor()
+
+    if 'desculpe' in nome_hospital.lower():
+
+        if "sem" in especialidade.lower():
+            return "Informar a especialidade"
+
+        consulta = """
+        SELECT * FROM redeamil WHERE elemento_de_divulgação LIKE %s AND municipio LIKE %s
+        """
+        cursor.execute(consulta, (f'%{especialidade}%', f'%{cidade}%'))
+
+    else:
+
+        consulta = """
+        SELECT * FROM redeamil WHERE nome_prestador LIKE %s
+        """
+        cursor.execute(consulta, (f'%{nome_hospital}%',))
+
+        print(f"CURSOR ========== {cursor.fetchall()}")
+
+        if cursor.fetchall() == []:
+            return "Hospital não encontrado"
+
+    resultados = cursor.fetchall()
+    conexao.close()
+
+    return resultados
 
 
 def buscarPlanos(mensagem):
@@ -347,33 +323,24 @@ def buscarPlanos(mensagem):
     """
     plano = gerarRepostaChatGPTSemHistórico(contexto, mensagem)
 
-    try:
-        conexao = mysql.connector.connect(
-            host="localhost",
-            port=3306,
-            user="root",
-            password="",
-            database="w3g_movimentacoes"
-        )
-
-        cursor = conexao.cursor()
-
-        consulta = """
-        SELECT * FROM planosAmil WHERE nome_plano LIKE %s
-        """
-
-        cursor.execute(consulta, (f'%{plano}%',))
-        resultados = cursor.fetchall()
-
-        return resultados
-
-    except Error as e:
-        print("Erro ao conectar ao MySQL: ", e)
+    conexao = ChamarBancoDeDados()
+    if conexao is None:
+        print("Erro na conexão com o banco de dados.")
         return []
-    finally:
-        if conexao.is_connected():
-            cursor.close()
-            conexao.close()
+
+    cursor = conexao.cursor()
+
+    cursor = conexao.cursor()
+
+    consulta = """
+    SELECT * FROM planosAmil WHERE nome_plano LIKE %s
+    """
+
+    cursor.execute(consulta, (f'%{plano}%',))
+    resultados = cursor.fetchall()
+    conexao.close()
+
+    return resultados
 
 
 def formatarDadosParaTexto(dados):
@@ -461,34 +428,25 @@ def buscarPlanoBeneficiario(mensagem):
 
     print(f"NOME BENEFICIARIO ========= {nome_beneficiario}")
 
-    try:
-        conexao = mysql.connector.connect(
-            host="localhost",
-            port=3306,
-            user="root",
-            password="",
-            database="w3g_movimentacoes"
-        )
-
-        cursor = conexao.cursor()
-
-        consulta = """
-            SELECT DISTINCT plano FROM movimentacoes
-            WHERE beneficiario LIkE %s AND plano NOT LIKE %s
-        """
-
-        cursor.execute(consulta, (f'%{nome_beneficiario}%', '%DENTAL%'))
-        resultado = cursor.fetchall()
-
-        return resultado[0][0]
-
-    except Error as e:
-        print(f"Erro ao conectar ao MySQL {e}")
+    conexao = ChamarBancoDeDados()
+    if conexao is None:
+        print("Erro na conexão com o banco de dados.")
         return []
-    finally:
-        if conexao.is_connected():
-            cursor.close()
-            conexao.close()
+
+    cursor = conexao.cursor()
+
+    cursor = conexao.cursor()
+
+    consulta = """
+        SELECT DISTINCT plano FROM movimentacoes
+        WHERE beneficiario LIkE %s AND plano NOT LIKE %s
+    """
+
+    cursor.execute(consulta, (f'%{nome_beneficiario}%', '%DENTAL%'))
+    resultado = cursor.fetchall()
+    conexao.close()
+
+    return resultado[0][0]
 
 
 def extrairCodigoPlano(plano):
@@ -498,6 +456,7 @@ def extrairCodigoPlano(plano):
     return None  # Retorna None se não encontrar
 
 
+#AGORA PRECISO CONECTAR 
 def buscarRedePorEspecialidade(mensagem):
     plano = buscarPlanoBeneficiario(mensagem)
 
@@ -522,56 +481,47 @@ def buscarRedePorEspecialidade(mensagem):
     contexto_nome_hospital = f"""
         Dentro dessa mensagem: "{mensagem}", identifique qual é o hospital buscado na pergunta sem nenhuma pontuação. Lembre-se de escrever apenas o nome do hospital informada sem pontuação e sem assento. Pode acontecer de não possuir nenhum hospital nesse caso escreva 'desculpe'
     """
+    
     nome_hospital = gerarRepostaChatGPTSemHistórico(contexto_nome_hospital, mensagem)
 
-    try:
-        conexao = mysql.connector.connect(
-            host="localhost",
-            port=3306,
-            user="root",
-            password="",
-            database="w3g_movimentacoes"
-        )
-
-        cursor = conexao.cursor()
-
-        if 'desculpe' in nome_hospital.lower():
-
-            # Usando uma cláusula WHERE para verificar se o plano é menor ou igual ao plano máximo
-            consulta = """
-                SELECT * FROM redeamil
-                WHERE elemento_de_divulgação LIKE %s
-                AND numero_plano <= %s
-                AND municipio LIKE %s
-            """
-
-            cursor.execute(consulta, (f'%{especialidade}%', plano, f'%{municipio}%'))
-            resultados = cursor.fetchall()
-
-            return resultados
-        else:
-
-            "consulta por hospital especifico"
-            consulta = """
-                SELECT * FROM redeAmil
-                Where numero_plano <= %s
-                and nome_prestador like %s
-            """
-
-            cursor.execute(consulta, (plano, f'%{nome_hospital}%'))
-            resultados = cursor.fetchall()
-
-            return resultados
-
-    except Error as e:
-        print(f"Erro ao conectar ao MySQL {e}")
+    conexao = ChamarBancoDeDados()
+    if conexao is None:
+        print("Erro na conexão com o banco de dados.")
         return []
-    finally:
-        if conexao.is_connected():
-            cursor.close()
-            conexao.close()
+
+    cursor = conexao.cursor()
+
+    if 'desculpe' in nome_hospital.lower():
+
+        # Usando uma cláusula WHERE para verificar se o plano é menor ou igual ao plano máximo
+        consulta = """
+            SELECT * FROM redeamil
+            WHERE elemento_de_divulgação LIKE %s
+            AND numero_plano <= %s
+            AND municipio LIKE %s
+        """
+
+        cursor.execute(consulta, (f'%{especialidade}%', plano, f'%{municipio}%'))
+        resultados = cursor.fetchall()
+        conexao.close()
+        
+        return resultados
+    else:
+
+        "consulta por hospital especifico"
+        consulta = """
+            SELECT * FROM redeAmil
+            Where numero_plano <= %s
+            and nome_prestador like %s
+        """
+
+        cursor.execute(consulta, (plano, f'%{nome_hospital}%'))
+        resultados = cursor.fetchall()
+        conexao.close()
+        
+        return resultados
 
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000)
+    app.run(debug=False)
 

@@ -1,6 +1,7 @@
-gunicorn==23.0.0
-mysql==0.0.3
-mysql-connector-python==9.1.0
-mysqlclient==2.2.6
-packaging==24.2
-python-dotenv==1.0.1
+Flask==1.1.4
+Werkzeug==1.0.1
+markupsafe==2.0.1
+openai==1.41.1
+mysql-connector-python==8.0.33
+requests==2.28.1
+python-dotenv==0.21.0
